@@ -33,7 +33,9 @@ typedef struct {
   lua_State *L;
   ZIO *Z;
   const char *name;
+  size_t sizeof_size_t;  // 新增
 } LoadState;
+
 
 
 static l_noret error(LoadState *S, const char *why) {
@@ -88,23 +90,31 @@ static lua_Integer LoadInteger (LoadState *S) {
 static TString *LoadString (LoadState *S) {
   size_t size = LoadByte(S);
   if (size == 0xFF) {
-    uint32_t s32 = 0;
-    LoadBlock(S, &s32, 4);
-    size = (size_t)s32;
+    if (S->sizeof_size_t == 4) {
+      uint32_t s32;
+      LoadVar(S, s32);
+      size = s32;
+    } else if (S->sizeof_size_t == 8) {
+      uint64_t s64;
+      LoadVar(S, s64);
+      size = (size_t)s64;
+    } else {
+      LoadVar(S, size);
+    }
   }
   if (size == 0)
     return NULL;
-  else if (--size <= LUAI_MAXSHORTLEN) {  /* short string? */
+  else if (--size <= LUAI_MAXSHORTLEN) {
     char buff[LUAI_MAXSHORTLEN];
     LoadVector(S, buff, size);
     return luaS_newlstr(S->L, buff, size);
-  }
-  else {  /* long string */
+  } else {
     TString *ts = luaS_createlngstrobj(S->L, size);
-    LoadVector(S, getstr(ts), size);  /* load directly in final place */
+    LoadVector(S, getstr(ts), size);
     return ts;
   }
 }
+
 
 
 
@@ -238,14 +248,14 @@ static void fchecksize (LoadState *S, size_t size, const char *tname) {
 #define checksize(S,t)	fchecksize(S,sizeof(t),#t)
 
 static void checkHeader (LoadState *S) {
-  checkliteral(S, LUA_SIGNATURE + 1, "not a");  /* 1st char already checked */
+  checkliteral(S, LUA_SIGNATURE + 1, "not a");
   if (LoadByte(S) != LUAC_VERSION)
     error(S, "version mismatch in");
   if (LoadByte(S) != LUAC_FORMAT)
     error(S, "format mismatch in");
   checkliteral(S, LUAC_DATA, "corrupted");
   checksize(S, int);
-  checksize(S, size_t);
+  S->sizeof_size_t = LoadByte(S);  // 替换 checksize(S, size_t)
   checksize(S, Instruction);
   checksize(S, lua_Integer);
   checksize(S, lua_Number);
