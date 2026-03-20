@@ -87,8 +87,11 @@ static lua_Integer LoadInteger (LoadState *S) {
 
 static TString *LoadString (LoadState *S) {
   size_t size = LoadByte(S);
-  if (size == 0xFF)
-    LoadVar(S, size);
+  if (size == 0xFF) {
+    uint32_t s32 = 0;
+    LoadBlock(S, &s32, 4);
+    size = (size_t)s32;
+  }
   if (size == 0)
     return NULL;
   else if (--size <= LUAI_MAXSHORTLEN) {  /* short string? */
@@ -102,6 +105,7 @@ static TString *LoadString (LoadState *S) {
     return ts;
   }
 }
+
 
 
 static void LoadCode (LoadState *S, Proto *f) {
